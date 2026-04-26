@@ -181,7 +181,7 @@ function App(){
 
   // Record measure
   const recM=useCallback(()=>{
-    const v=parseFloat(sv);
+    const v=parseFloat(sv.replace(",","."));
     if(!(v>=0)){T("Valore s non valido","e");return;}
     const p={ts:new Date().toISOString(),t:parseFloat((tsec/60).toFixed(3)),s:v};
     const up=steps.map((s,i)=>i===idx?{...s,m:[...s.m,p]}:s);
@@ -203,7 +203,7 @@ function App(){
   };
 
   const recR=()=>{
-    const v=parseFloat(rv);
+    const v=parseFloat(rv.replace(",","."));
     if(!(v>=0)){T("Valore s' non valido","e");return;}
     const p={ts:new Date().toISOString(),t:parseFloat((tsec/60).toFixed(3)),s:v};
     const up=[...rec,p];setRec(up);setRv("");
