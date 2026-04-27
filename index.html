@@ -40,8 +40,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .bp{background:var(--blue)!important;color:#fff!important;border:none!important;font-weight:500}
 .bg{background:var(--green)!important;color:#fff!important;border:none!important;font-weight:500}
 .bo{background:var(--orange)!important;color:#fff!important;border:none!important;font-weight:500}
-/* timer ora mostra minuti decimali */
-.timer{font-size:40px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-1px;line-height:1}
+.timer{font-size:44px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-1px;line-height:1}
 .timer-sub{font-size:12px;color:var(--text2);margin-top:3px}
 .notif{position:sticky;top:0;z-index:20;padding:10px 16px;font-size:13px}
 .ni{background:#e6f1fb;color:#185fa5;border-bottom:.5px solid #b5d4f4}
@@ -57,7 +56,7 @@ td{padding:5px 0;border-top:.5px solid var(--border)}
 .wb{background:var(--amb);border:.5px solid #fac775;border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--ambt)}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;display:flex;align-items:flex-end}
 .modal{background:var(--bg);border-radius:16px 16px 0 0;padding:1.25rem;width:100%;max-height:80vh;display:flex;flex-direction:column;gap:12px}
-.modal textarea{flex:1;min-height:160px;font-family:"Courier New",monospace;font-size:11px;background:var(--bg2);border:.5px solid var(--border);border-radius:var(--rs);padding:10px;color:var(--text);resize:none}
+.modal textarea{flex:1;min-height:180px;font-family:"Courier New",monospace;font-size:11px;background:var(--bg2);border:.5px solid var(--border);border-radius:var(--rs);padding:10px;color:var(--text);resize:none}
 </style>
 </head>
 <body>
@@ -73,65 +72,61 @@ const html = htm.bind(React.createElement);
 const COLORS = ["#378ADD","#1D9E75","#D85A30","#7F77DD","#BA7517","#D4537E","#639922","#E24B4A"];
 const PH = {S:"setup",D:"down",R:"rec",X:"res"};
 
-// Parsing robusto: accetta sia punto che virgola come decimale
+// Parsing: accetta virgola o punto come decimale
 const pnum = s => {
-  const clean = String(s == null ? "" : s).trim().replace(",",".");
-  const v = parseFloat(clean);
+  const v = parseFloat(String(s==null?"":s).trim().replace(",","."));
   return isNaN(v) ? NaN : v;
 };
 
-// Formattatori timer
-const fmtMin  = s => (s/60).toFixed(3);          // "1.250" — valore registrato
-const fmtMMSS = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+// t è sempre in SECONDI (intero).
+// Display e CSV usano MM:SS.
+const mmss = s => {
+  const sec = Math.round(Number(s)||0);
+  return `${String(Math.floor(sec/60)).padStart(2,"0")}:${String(sec%60).padStart(2,"0")}`;
+};
+// Per il grafico log serve un numero > 0 (secondi → minuti decimali)
+const toMinDec = s => Math.max((Number(s)||0)/60, 0.001);
 
 const DB = {
-  K:"pump_v4",
+  K:"pump_v5",
   save(d){try{localStorage.setItem(DB.K,JSON.stringify(d))}catch{}},
   load(){try{const r=localStorage.getItem(DB.K);return r?JSON.parse(r):null}catch{return null}},
   clear(){try{localStorage.removeItem(DB.K)}catch{}}
 };
 
 function App(){
-  const [ph,setPh]   = useState(PH.S);
+  const [ph,setPh]     = useState(PH.S);
   const [well,setWell] = useState({name:"",lat:"",lon:"",alt:"",ls:""});
-  const [gL,setGL]   = useState(false);
-  const [gE,setGE]   = useState("");
-  const [cfg,setCfg] = useState([{n:1,q:""},{n:2,q:""},{n:3,q:""}]);
+  const [gL,setGL]     = useState(false);
+  const [gE,setGE]     = useState("");
+  const [cfg,setCfg]   = useState([{n:1,q:""},{n:2,q:""},{n:3,q:""}]);
   const [steps,setSteps] = useState([]);
-  const [idx,setIdx] = useState(0);
-  const [rec,setRec] = useState([]);
+  const [idx,setIdx]   = useState(0);
+  const [rec,setRec]   = useState([]);
   const [recQ,setRecQ] = useState(0);
-  const [tsec,setTsec] = useState(0);
+  const [tsec,setTsec] = useState(0);   // secondi interi
   const [trun,setTrun] = useState(false);
-  const [toast,setToast] = useState(null);
+  const [toast,setToast]   = useState(null);
   const [restored,setRestored] = useState(false);
-  const [chartOk,setChartOk] = useState(false);
+  const [chartOk,setChartOk]   = useState(false);
   const [csvModal,setCsvModal] = useState(null);
 
-  // DOM refs per input (completamente uncontrolled — nessun binding React)
+  // Input completamente uncontrolled — zero binding React
   const svDom = useRef(null);
   const rvDom = useRef(null);
-
-  // Chart refs
   const tref  = useRef(null);
   const cref  = useRef(null);
   const cinst = useRef(null);
 
   const T = (msg,t="i") => { setToast({msg,t}); setTimeout(()=>setToast(null),3000); };
 
-  // ── Restore session ──────────────────────────────────────────────────
+  // ── Restore ──────────────────────────────────────────────────────────
   useEffect(()=>{
     const d = DB.load();
-    if(!d || d.ph===PH.S) return;
-    setWell(d.well||{});
-    setCfg(d.cfg||[]);
-    setSteps(d.steps||[]);
-    setIdx(d.idx??0);
-    setRec(d.rec||[]);
-    setRecQ(d.recQ||0);
-    setTsec(d.tsec||0);
-    setPh(d.ph);
-    setRestored(true);
+    if(!d||d.ph===PH.S) return;
+    setWell(d.well||{}); setCfg(d.cfg||[]); setSteps(d.steps||[]);
+    setIdx(d.idx??0); setRec(d.rec||[]); setRecQ(d.recQ||0);
+    setTsec(d.tsec||0); setPh(d.ph); setRestored(true);
   },[]);
 
   // ── Timer ────────────────────────────────────────────────────────────
@@ -146,38 +141,38 @@ function App(){
 
   useEffect(()=>{
     if(!chartOk||ph!==PH.X||!cref.current||!window.Chart) return;
-    if(cinst.current){ cinst.current.destroy(); cinst.current=null; }
+    if(cinst.current){cinst.current.destroy();cinst.current=null;}
     const ds = steps.filter(s=>s.m.length>0).map((s,i)=>({
-      label:`G${s.n} Q=${s.q}`,
-      data:s.m.map(p=>({x:Math.max(p.t,.001),y:p.s})),
-      borderColor:COLORS[i%COLORS.length],backgroundColor:"transparent",
-      borderWidth:2,pointRadius:3,tension:0
+      label:`G${s.n} Q=${s.q} m³/h`,
+      data: s.m.map(p=>({x:toMinDec(p.t), y:p.s})),
+      borderColor:COLORS[i%COLORS.length], backgroundColor:"transparent",
+      borderWidth:2, pointRadius:3, tension:0
     }));
     if(rec.length>0) ds.push({
-      label:`Risalita Q=${recQ}`,
-      data:rec.map(p=>({x:Math.max(p.t,.001),y:p.s})),
-      borderColor:"#E24B4A",backgroundColor:"transparent",
-      borderWidth:2,borderDash:[6,3],pointRadius:3,tension:0
+      label:`Risalita Q=${recQ} m³/h`,
+      data: rec.map(p=>({x:toMinDec(p.t), y:p.s})),
+      borderColor:"#E24B4A", backgroundColor:"transparent",
+      borderWidth:2, borderDash:[6,3], pointRadius:3, tension:0
     });
     cinst.current = new Chart(cref.current,{
-      type:"scatter",data:{datasets:ds},
-      options:{responsive:true,maintainAspectRatio:false,
+      type:"scatter", data:{datasets:ds},
+      options:{responsive:true, maintainAspectRatio:false,
         scales:{
           x:{type:"logarithmic",
              title:{display:true,text:"Tempo [min] — scala log",font:{size:10},color:"#888"},
-             ticks:{color:"#888",callback:v=>Number(v.toFixed(3)).toString()},
+             ticks:{color:"#888", callback:v=>v<1?v.toFixed(2):v.toFixed(0)},
              grid:{color:"rgba(128,128,128,.1)"}},
           y:{reverse:true,
              title:{display:true,text:"s [m]",font:{size:10},color:"#888"},
-             ticks:{color:"#888"},grid:{color:"rgba(128,128,128,.1)"}}
+             ticks:{color:"#888"}, grid:{color:"rgba(128,128,128,.1)"}}
         },
         plugins:{
           legend:{display:true,position:"bottom",labels:{font:{size:10},boxWidth:10,color:"#888"}},
-          tooltip:{callbacks:{label:c=>`t=${c.raw.x.toFixed(3)}min  s=${c.raw.y.toFixed(3)}m`}}
+          tooltip:{callbacks:{label:c=>`t=${mmss(c.raw.x*60)}  s=${Number(c.raw.y).toFixed(3)} m`}}
         }
       }
     });
-    return()=>{ if(cinst.current){cinst.current.destroy();cinst.current=null;} };
+    return()=>{if(cinst.current){cinst.current.destroy();cinst.current=null;}};
   },[chartOk,steps,rec,recQ,ph]);
 
   // ── Persist ──────────────────────────────────────────────────────────
@@ -188,67 +183,62 @@ function App(){
   // ── GPS ──────────────────────────────────────────────────────────────
   const getGPS = ()=>{
     setGL(true); setGE("");
-    if(!navigator.geolocation){ setGE("GPS non disponibile"); setGL(false); return; }
+    if(!navigator.geolocation){setGE("GPS non disponibile");setGL(false);return;}
     navigator.geolocation.getCurrentPosition(
       pos=>{
         const{latitude:la,longitude:lo,altitude:al}=pos.coords;
         setWell(w=>({...w,lat:la.toFixed(6),lon:lo.toFixed(6),alt:al?al.toFixed(1):"N/D"}));
         setGL(false); T("Coordinate acquisite","o");
       },
-      ()=>{ setGE("Permesso GPS negato"); setGL(false); }
+      ()=>{setGE("Permesso GPS negato");setGL(false);}
     );
   };
 
-  // ── Start session ────────────────────────────────────────────────────
+  // ── Start ────────────────────────────────────────────────────────────
   const start = ()=>{
-    if(!well.name.trim()){ T("Inserisci nome pozzo","e"); return; }
-    if(cfg.some(s=>!(pnum(s.q)>0))){ T("Imposta Q per ogni gradino","e"); return; }
-    const built = cfg.map(s=>({n:s.n,q:pnum(s.q).toFixed(2),m:[]}));
+    if(!well.name.trim()){T("Inserisci nome pozzo","e");return;}
+    if(cfg.some(s=>!(pnum(s.q)>0))){T("Imposta Q per ogni gradino","e");return;}
+    const built = cfg.map(s=>({n:s.n, q:pnum(s.q).toFixed(2), m:[]}));
     setSteps(built); setIdx(0); setPh(PH.D); setTsec(0); setTrun(false);
     DB.save({ph:PH.D,well,cfg,steps:built,idx:0,rec:[],recQ:0,tsec:0});
     T(`Avviata — ${built.length} gradini`,"o");
   };
 
-  // ── Record measure (legge SEMPRE dal DOM — zero stale closure) ───────
+  // ── Registra misura (legge sempre dal DOM) ───────────────────────────
   const recM = ()=>{
-    if(!svDom.current){ T("Input non disponibile","e"); return; }
+    if(!svDom.current){T("Input non disponibile","e");return;}
     const raw = svDom.current.value;
     const v   = pnum(raw);
-    if(isNaN(v)||v<0){ T(`Valore non valido: "${raw}" — usa . o ,`,"e"); return; }
-    const tmin = parseFloat(fmtMin(tsec));
-    const p = {ts:new Date().toISOString(), t:tmin, s:v};
-    const up = steps.map((s,i)=>i===idx ? {...s,m:[...s.m,p]} : s);
+    if(isNaN(v)||v<0){T(`Valore non valido: "${raw}"  usa . o ,`,"e");return;}
+    const p = {ts:new Date().toISOString(), t:tsec, s:v};
+    const up = steps.map((s,i)=>i===idx?{...s,m:[...s.m,p]}:s);
     setSteps(up);
-    svDom.current.value = "";
-    svDom.current.focus();
+    svDom.current.value=""; svDom.current.focus();
     save({steps:up});
-    T(`✓  s = ${v.toFixed(3)} m   t = ${tmin.toFixed(3)} min`,"o");
+    T(`✓  s = ${v.toFixed(3)} m   t = ${mmss(tsec)}`,"o");
   };
 
   const recR = ()=>{
-    if(!rvDom.current){ T("Input non disponibile","e"); return; }
+    if(!rvDom.current){T("Input non disponibile","e");return;}
     const raw = rvDom.current.value;
     const v   = pnum(raw);
-    if(isNaN(v)||v<0){ T(`Valore non valido: "${raw}" — usa . o ,`,"e"); return; }
-    const tmin = parseFloat(fmtMin(tsec));
-    const p = {ts:new Date().toISOString(), t:tmin, s:v};
+    if(isNaN(v)||v<0){T(`Valore non valido: "${raw}"  usa . o ,`,"e");return;}
+    const p = {ts:new Date().toISOString(), t:tsec, s:v};
     const up = [...rec,p];
-    setRec(up);
-    rvDom.current.value = "";
+    setRec(up); rvDom.current.value="";
     save({rec:up});
-    T(`✓  s' = ${v.toFixed(3)} m   t = ${tmin.toFixed(3)} min`,"o");
+    T(`✓  s' = ${v.toFixed(3)} m   t = ${mmss(tsec)}`,"o");
   };
 
-  // ── Step navigation ──────────────────────────────────────────────────
+  // ── Navigazione gradini ──────────────────────────────────────────────
   const nextStep = ()=>{
     const ni = idx+1;
-    if(ni>=steps.length){ T("Tutti i gradini completati","o"); return; }
+    if(ni>=steps.length){T("Tutti i gradini completati","o");return;}
     setIdx(ni); setTrun(false);
     save({idx:ni});
     T(`Gradino ${steps[ni].n} — timer in pausa`);
   };
 
-  // ── Recovery ─────────────────────────────────────────────────────────
   const startRec = ()=>{
     const lq = pnum(steps[steps.length-1].q);
     setPh(PH.R); setRecQ(lq); setTsec(0); setTrun(false); setRec([]);
@@ -257,11 +247,9 @@ function App(){
   };
 
   const finish = ()=>{
-    setPh(PH.X); setTrun(false); setChartOk(false);
-    save({ph:PH.X});
+    setPh(PH.X); setTrun(false); setChartOk(false); save({ph:PH.X});
   };
 
-  // ── New session ──────────────────────────────────────────────────────
   const newSession = ()=>{
     DB.clear();
     setPh(PH.S); setWell({name:"",lat:"",lon:"",alt:"",ls:""});
@@ -272,60 +260,47 @@ function App(){
     if(rvDom.current) rvDom.current.value="";
   };
 
-  // ── Build CSV ────────────────────────────────────────────────────────
+  // ── CSV ──────────────────────────────────────────────────────────────
   const buildCSV = ()=>{
-    let c = `# PROVE DI PORTATA\n`;
-    c += `# Pozzo,${well.name}\n`;
-    c += `# Livello_statico_m,${well.ls||""}\n`;
-    c += `# Lat,${well.lat||""}\n`;
-    c += `# Lon,${well.lon||""}\n`;
-    c += `# Alt_m,${well.alt||""}\n`;
-    c += `# Esportato,${new Date().toISOString()}\n`;
-    c += `\nFASE,GRADINO,Q_m3h,TIMESTAMP,TEMPO_min,ABBASSAMENTO_m\n`;
+    let c  = `# PROVE DI PORTATA\n`;
+        c += `# Pozzo,${well.name}\n`;
+        c += `# Livello_statico_m,${well.ls||""}\n`;
+        c += `# Lat,${well.lat||""}\n`;
+        c += `# Lon,${well.lon||""}\n`;
+        c += `# Alt_m,${well.alt||""}\n`;
+        c += `# Esportato,${new Date().toISOString()}\n`;
+        c += `\nFASE,GRADINO,Q_m3h,TIMESTAMP,TEMPO_mmss,ABBASSAMENTO_m\n`;
     steps.forEach(s=>s.m.forEach(p=>{
-      c += `ABBASSAMENTO,${s.n},${s.q},${p.ts},${Number(p.t).toFixed(3)},${Number(p.s).toFixed(3)}\n`;
+      c += `ABBASSAMENTO,${s.n},${s.q},${p.ts},${mmss(p.t)},${Number(p.s).toFixed(3)}\n`;
     }));
     rec.forEach(p=>{
-      c += `RISALITA,,${recQ},${p.ts},${Number(p.t).toFixed(3)},${Number(p.s).toFixed(3)}\n`;
+      c += `RISALITA,,${recQ},${p.ts},${mmss(p.t)},${Number(p.s).toFixed(3)}\n`;
     });
     return c;
   };
 
-  // ── Export CSV ───────────────────────────────────────────────────────
-  const exportCSV = async()=>{
-    const totalMis = steps.reduce((a,s)=>a+s.m.length,0)+rec.length;
-    if(totalMis===0){ T("Nessuna misura da esportare","e"); return; }
-    const c     = buildCSV();
-    const fname = `portata_${well.name.replace(/\s+/g,"_")}_${Date.now()}.csv`;
-    setCsvModal({text:c, fname});
+  const exportCSV = ()=>{
+    const total = steps.reduce((a,s)=>a+s.m.length,0)+rec.length;
+    if(total===0){T("Nessuna misura da esportare","e");return;}
+    setCsvModal({text:buildCSV(), fname:`portata_${well.name.replace(/\s+/g,"_")}_${Date.now()}.csv`});
   };
 
-  // ── Helpers ──────────────────────────────────────────────────────────
-  const shareFile = async(c,fname)=>{
-    const blob = new Blob([c],{type:"text/plain;charset=utf-8"});
+  const doShare = async(text,fname)=>{
+    const blob = new Blob([text],{type:"text/plain;charset=utf-8"});
     const file = new File([blob],fname,{type:"text/plain"});
     try{
       if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
         await navigator.share({files:[file],title:`Portata — ${well.name}`});
-        return true;
+        return;
       }
-    }catch(e){ if(e.name==="AbortError") return true; }
-    return false;
+      if(navigator.share) await navigator.share({title:`Portata — ${well.name}`,text});
+      else T("Condivisione non supportata — usa Copia","i");
+    }catch(e){ if(e.name!=="AbortError") T("Errore condivisione","e"); }
   };
 
-  const openInSafari = (c)=>{
-    // Apre il contenuto CSV in una nuova tab Safari — da lì Share → Spark
-    const uri = "data:text/plain;charset=utf-8,"+encodeURIComponent(c);
-    window.open(uri,"_blank");
-  };
-
-  const copyText = async(c)=>{
-    try{
-      await navigator.clipboard.writeText(c);
-      T("Copiato negli appunti","o");
-    }catch{
-      T("Copia manuale: seleziona tutto il testo qui sopra","i");
-    }
+  const doCopy = async text=>{
+    try{ await navigator.clipboard.writeText(text); T("Copiato negli appunti — incolla nella mail","o"); }
+    catch{ T("Seleziona e copia il testo manualmente","i"); }
   };
 
   // ── Derived ──────────────────────────────────────────────────────────
@@ -335,7 +310,6 @@ function App(){
   const phN    = phases.indexOf(ph);
   const phLbl  = {[PH.S]:"1. Configurazione",[PH.D]:"2. Abbassamento",[PH.R]:"3. Risalita",[PH.X]:"4. Risultati"};
 
-  // ── Render ───────────────────────────────────────────────────────────
   return html`<div>
 
     ${toast&&html`<div className=${"notif "+{i:"ni",o:"no",e:"ne"}[toast.t]}>${toast.msg}</div>`}
@@ -353,21 +327,14 @@ function App(){
         </div>
         <textarea readOnly value=${csvModal.text} onClick=${e=>e.target.select()}></textarea>
         <div style=${{display:"flex",gap:8}}>
-          <button className="bp" onClick=${async()=>{const ok=await shareFile(csvModal.text,csvModal.fname);if(!ok)T("Condivisione file non supportata su questa app","i");}} style=${{flex:1,padding:10,fontSize:13}}>
-            ⬆ Condividi file
-          </button>
-          <button className="bo" onClick=${()=>openInSafari(csvModal.text)} style=${{flex:1,padding:10,fontSize:13}}>
-            🌐 Apri in Safari
-          </button>
-          <button onClick=${()=>copyText(csvModal.text)} style=${{flex:1,padding:10,fontSize:13}}>
-            📋 Copia
-          </button>
+          <button className="bp" onClick=${()=>doShare(csvModal.text,csvModal.fname)}
+            style=${{flex:1,padding:12,fontSize:14}}>⬆ Condividi</button>
+          <button className="bg" onClick=${()=>doCopy(csvModal.text)}
+            style=${{flex:1,padding:12,fontSize:14}}>📋 Copia testo</button>
         </div>
-        <p style=${{fontSize:11,color:"var(--text2)"}}>Apri in Safari → tocca ◻ → scegli Spark per allegare il file</p>
       </div>
     </div>`}
 
-    <!-- Header -->
     <div style=${{padding:"16px 16px 0"}}>
       <div style=${{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
         <span style=${{fontSize:13,fontWeight:500}}>PROVE DI PORTATA</span>
@@ -381,7 +348,8 @@ function App(){
     ${ph===PH.S&&html`<div style=${{padding:"0 16px"}}>
       <div className="card">
         <span className="lbl">Nome pozzo *</span>
-        <input type="text" value=${well.name} onInput=${e=>setWell(w=>({...w,name:e.target.value}))} placeholder="es. Pozzo P1"/>
+        <input type="text" value=${well.name}
+          onInput=${e=>setWell(w=>({...w,name:e.target.value}))} placeholder="es. Pozzo P1"/>
       </div>
       <div className="card">
         <span className="lbl">Livello statico falda [m da p.c.]</span>
@@ -392,14 +360,17 @@ function App(){
       <div className="card">
         <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <span className="lbl" style=${{margin:0}}>Coordinate GPS</span>
-          <button onClick=${getGPS} disabled=${gL} style=${{fontSize:12,padding:"4px 12px"}}>${gL?"Acquisizione...":"Acquisisci GPS"}</button>
+          <button onClick=${getGPS} disabled=${gL} style=${{fontSize:12,padding:"4px 12px"}}>
+            ${gL?"Acquisizione...":"Acquisisci GPS"}
+          </button>
         </div>
         ${gE&&html`<p style=${{color:"var(--red)",fontSize:12,marginBottom:8}}>${gE}</p>`}
         <div style=${{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
           ${["lat","lon","alt"].map(k=>html`<div key=${k}>
             <span className="lbl">${k==="lat"?"Lat":k==="lon"?"Lon":"Quota m"}</span>
-            <input type="text" inputMode="decimal" autoComplete="off" value=${well[k]}
-              onInput=${e=>setWell(w=>({...w,[k]:e.target.value}))} placeholder=${k==="alt"?"m":"°"} style=${{fontSize:13}}/>
+            <input type="text" inputMode="decimal" autoComplete="off"
+              value=${well[k]} onInput=${e=>setWell(w=>({...w,[k]:e.target.value}))}
+              placeholder=${k==="alt"?"m":"°"} style=${{fontSize:13}}/>
           </div>`)}
         </div>
       </div>
@@ -410,12 +381,15 @@ function App(){
             <p style=${{fontSize:12,color:"var(--text2)",marginTop:2}}>Imposta Q [m³/h] prima di avviare</p>
           </div>
           <div style=${{display:"flex",gap:6}}>
-            <button onClick=${()=>{if(cfg.length>3)setCfg(c=>c.slice(0,-1))}} disabled=${cfg.length<=3} style=${{fontSize:20,lineHeight:1,padding:"2px 10px"}}>−</button>
-            <button onClick=${()=>setCfg(c=>[...c,{n:c.length+1,q:""}])} style=${{fontSize:20,lineHeight:1,padding:"2px 10px"}}>+</button>
+            <button onClick=${()=>{if(cfg.length>3)setCfg(c=>c.slice(0,-1))}}
+              disabled=${cfg.length<=3} style=${{fontSize:20,lineHeight:1,padding:"2px 10px"}}>−</button>
+            <button onClick=${()=>setCfg(c=>[...c,{n:c.length+1,q:""}])}
+              style=${{fontSize:20,lineHeight:1,padding:"2px 10px"}}>+</button>
           </div>
         </div>
         ${cfg.map((s,i)=>html`<div key=${i} style=${{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-          <div style=${{width:28,height:28,borderRadius:"50%",background:COLORS[i%COLORS.length],display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <div style=${{width:28,height:28,borderRadius:"50%",background:COLORS[i%COLORS.length],
+            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             <span style=${{fontSize:12,fontWeight:500,color:"#fff"}}>${s.n}</span>
           </div>
           <div style=${{flex:1}}>
@@ -428,7 +402,8 @@ function App(){
         </div>`)}
         <p style=${{fontSize:11,color:"var(--text2)",marginTop:4}}>Min. 3 gradini richiesti</p>
       </div>
-      <button className="bp" onClick=${start} style=${{width:"100%",padding:14,fontSize:15,borderRadius:"var(--r)"}}>Avvia prova</button>
+      <button className="bp" onClick=${start}
+        style=${{width:"100%",padding:14,fontSize:15,borderRadius:"var(--r)"}}>Avvia prova</button>
     </div>`}
 
     <!-- ══ ABBASSAMENTO ══ -->
@@ -441,59 +416,65 @@ function App(){
           G${s.n} — ${s.q} m³/h${s.m.length>0?` (${s.m.length})`:""}
         </div>`)}
       </div>
-
       <div className="g3">
         <div className="mc"><span className="lbl">Gradino</span><div className="mv">${idx+1}/${steps.length}</div></div>
         <div className="mc"><span className="lbl">Misure tot</span><div className="mv">${steps.reduce((a,s)=>a+s.m.length,0)}</div></div>
         <div className="mc"><span className="lbl">Q [m³/h]</span><div className="mv">${cur.q}</div></div>
       </div>
 
-      <!-- Timer + input -->
       <div className="card" style=${{border:".5px solid var(--border2)"}}>
         <div style=${{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
           <div style=${{flex:1}}>
-            <span className="lbl">Timer — valore registrato in minuti</span>
-            <span className="timer" style=${{color:trun?"var(--green)":"var(--text)"}}>${fmtMin(tsec)}</span>
-            <div className="timer-sub">${trun?"▶ in corso":"❚❚ in pausa"} — ${fmtMMSS(tsec)}</div>
+            <span className="lbl">Timer</span>
+            <span className="timer" style=${{color:trun?"var(--green)":"var(--text)"}}>${mmss(tsec)}</span>
+            <div className="timer-sub">${trun?"▶ in corso":"❚❚ in pausa"}</div>
           </div>
-          <button onClick=${()=>setTrun(a=>!a)} style=${{padding:"10px 22px",fontWeight:500,border:"none",
-            background:trun?"#fcebeb":"#eaf3de",color:trun?"#a32d2d":"#3b6d11"}}>
+          <button onClick=${()=>setTrun(a=>!a)}
+            style=${{padding:"10px 22px",fontWeight:500,border:"none",
+              background:trun?"#fcebeb":"#eaf3de",color:trun?"#a32d2d":"#3b6d11"}}>
             ${trun?"Pausa":"Avvia"}
           </button>
         </div>
         <div style=${{display:"flex",gap:8,alignItems:"flex-end"}}>
           <div style=${{flex:1}}>
-            <span className="lbl">Abbassamento s [m]${trun?html` <span style=${{color:"var(--green)",fontSize:10}}>● live</span>`:""}</span>
-            <!-- INPUT UNCONTROLLED: nessun value= binding, React non interferisce -->
+            <span className="lbl">Abbassamento s [m]
+              ${trun?html`<span style=${{color:"var(--green)",fontSize:10}}> ● live</span>`:""}
+            </span>
             <input ref=${svDom} type="text" inputMode="decimal"
               autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
               onKeyDown=${e=>{if(e.key==="Enter"){e.preventDefault();recM();}}}
-              placeholder="0.000" style=${{fontSize:22,fontWeight:500}}/>
+              placeholder="es. 1.25 oppure 0.75"
+              style=${{fontSize:20,fontWeight:500}}/>
           </div>
-          <button className="bp" onClick=${recM} style=${{padding:"12px 20px",fontSize:15,fontWeight:500,flexShrink:0}}>
+          <button className="bp" onClick=${recM}
+            style=${{padding:"12px 18px",fontSize:15,fontWeight:500,flexShrink:0}}>
             + Misura
           </button>
         </div>
         <p style=${{fontSize:11,color:"var(--text2)",marginTop:6}}>Invio o "+ Misura" — il timer non si ferma</p>
       </div>
 
-      <!-- Last + log -->
       ${cur.m.length>0&&html`
         <div className="g2">
           <div className="mc">
-            <span className="lbl">Ultima s</span>
+            <span className="lbl">Ultima misura</span>
             <div className="mv">${Number(cur.m[cur.m.length-1].s).toFixed(3)} m</div>
-            <div style=${{fontSize:11,color:"var(--text2)",marginTop:2}}>@ ${Number(cur.m[cur.m.length-1].t).toFixed(3)} min</div>
+            <div style=${{fontSize:12,color:"var(--text2)",marginTop:2}}>t = ${mmss(cur.m[cur.m.length-1].t)}</div>
           </div>
-          <div className="mc"><span className="lbl">Misure G${cur.n}</span><div className="mv">${cur.m.length}</div></div>
+          <div className="mc">
+            <span className="lbl">Misure G${cur.n}</span>
+            <div className="mv">${cur.m.length}</div>
+          </div>
         </div>
         <div className="card">
           <span className="lbl">Log G${cur.n} (ultime 5)</span>
           <table><thead><tr>
-            <th>t [min]</th><th style=${{textAlign:"right"}}>s [m]</th><th style=${{textAlign:"right"}}>Ora</th>
+            <th>t [MM:SS]</th>
+            <th style=${{textAlign:"right"}}>s [m]</th>
+            <th style=${{textAlign:"right"}}>Ora</th>
           </tr></thead><tbody>
             ${[...cur.m].reverse().slice(0,5).map((p,i)=>html`<tr key=${i}>
-              <td>${Number(p.t).toFixed(3)}</td>
+              <td style=${{fontVariantNumeric:"tabular-nums"}}>${mmss(p.t)}</td>
               <td style=${{textAlign:"right",fontWeight:500}}>${Number(p.s).toFixed(3)}</td>
               <td style=${{textAlign:"right",color:"var(--text2)"}}>${new Date(p.ts).toLocaleTimeString("it-IT")}</td>
             </tr>`)}
@@ -503,29 +484,34 @@ function App(){
       `}
 
       <div style=${{display:"flex",gap:8}}>
-        ${!isLast&&html`<button onClick=${nextStep} style=${{flex:1,padding:11,fontSize:14,fontWeight:500}}>Gradino ${idx+2} →</button>`}
+        ${!isLast&&html`<button onClick=${nextStep}
+          style=${{flex:1,padding:11,fontSize:14,fontWeight:500}}>Gradino ${idx+2} →</button>`}
         <button className="bg" onClick=${startRec} style=${{flex:1,padding:11,fontSize:14}}>
           ${isLast?"Avvia risalita":`Risalita (ancora ${steps.length-1-idx})`}
         </button>
       </div>
-      ${isLast&&html`<button onClick=${finish} style=${{width:"100%",marginTop:8,padding:10,fontSize:13,color:"var(--text2)"}}>
+      ${isLast&&html`<button onClick=${finish}
+        style=${{width:"100%",marginTop:8,padding:10,fontSize:13,color:"var(--text2)"}}>
         Salta risalita — vai ai risultati
       </button>`}
     </div>`}
 
     <!-- ══ RISALITA ══ -->
     ${ph===PH.R&&html`<div style=${{padding:"0 16px"}}>
-      <div className="wb">Spegnere la pompa e avviare il timer.<br/>Q_n = <strong>${recQ} m³/h</strong></div>
-
+      <div className="wb">
+        Spegnere la pompa e avviare il timer.<br/>
+        Q_n = <strong>${recQ} m³/h</strong>
+      </div>
       <div className="card" style=${{border:".5px solid var(--border2)"}}>
         <div style=${{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
           <div style=${{flex:1}}>
-            <span className="lbl">Timer risalita — valore in minuti</span>
-            <span className="timer" style=${{color:trun?"var(--orange)":"var(--text)"}}>${fmtMin(tsec)}</span>
-            <div className="timer-sub">${trun?"▶ in corso":"❚❚ in pausa"} — ${fmtMMSS(tsec)}</div>
+            <span className="lbl">Timer risalita</span>
+            <span className="timer" style=${{color:trun?"var(--orange)":"var(--text)"}}>${mmss(tsec)}</span>
+            <div className="timer-sub">${trun?"▶ in corso":"❚❚ in pausa"}</div>
           </div>
-          <button onClick=${()=>setTrun(a=>!a)} style=${{padding:"10px 22px",fontWeight:500,border:"none",
-            background:trun?"#fcebeb":"var(--amb)",color:trun?"#a32d2d":"var(--ambt)"}}>
+          <button onClick=${()=>setTrun(a=>!a)}
+            style=${{padding:"10px 22px",fontWeight:500,border:"none",
+              background:trun?"#fcebeb":"var(--amb)",color:trun?"#a32d2d":"var(--ambt)"}}>
             ${trun?"Pausa":"Avvia"}
           </button>
         </div>
@@ -535,9 +521,11 @@ function App(){
             <input ref=${rvDom} type="text" inputMode="decimal"
               autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false"
               onKeyDown=${e=>{if(e.key==="Enter"){e.preventDefault();recR();}}}
-              placeholder="0.000" style=${{fontSize:22,fontWeight:500}}/>
+              placeholder="es. 0.25 oppure 0.75"
+              style=${{fontSize:20,fontWeight:500}}/>
           </div>
-          <button className="bo" onClick=${recR} style=${{padding:"12px 20px",fontSize:15,fontWeight:500,flexShrink:0}}>
+          <button className="bo" onClick=${recR}
+            style=${{padding:"12px 18px",fontSize:15,fontWeight:500,flexShrink:0}}>
             + Risalita
           </button>
         </div>
@@ -546,19 +534,22 @@ function App(){
 
       ${rec.length>0&&html`
         <div className="g2">
-          <div className="mc"><span className="lbl">Ultima s'</span>
+          <div className="mc">
+            <span className="lbl">Ultima s'</span>
             <div className="mv">${Number(rec[rec.length-1].s).toFixed(3)} m</div>
-            <div style=${{fontSize:11,color:"var(--text2)",marginTop:2}}>@ ${Number(rec[rec.length-1].t).toFixed(3)} min</div>
+            <div style=${{fontSize:12,color:"var(--text2)",marginTop:2}}>t = ${mmss(rec[rec.length-1].t)}</div>
           </div>
           <div className="mc"><span className="lbl">Misure risalita</span><div className="mv">${rec.length}</div></div>
         </div>
         <div className="card">
           <span className="lbl">Log risalita (ultime 5)</span>
           <table><thead><tr>
-            <th>t [min]</th><th style=${{textAlign:"right"}}>s' [m]</th><th style=${{textAlign:"right"}}>Ora</th>
+            <th>t [MM:SS]</th>
+            <th style=${{textAlign:"right"}}>s' [m]</th>
+            <th style=${{textAlign:"right"}}>Ora</th>
           </tr></thead><tbody>
             ${[...rec].reverse().slice(0,5).map((p,i)=>html`<tr key=${i}>
-              <td>${Number(p.t).toFixed(3)}</td>
+              <td style=${{fontVariantNumeric:"tabular-nums"}}>${mmss(p.t)}</td>
               <td style=${{textAlign:"right",fontWeight:500}}>${Number(p.s).toFixed(3)}</td>
               <td style=${{textAlign:"right",color:"var(--text2)"}}>${new Date(p.ts).toLocaleTimeString("it-IT")}</td>
             </tr>`)}
@@ -576,48 +567,60 @@ function App(){
     ${ph===PH.X&&html`<div style=${{padding:"0 16px"}}>
       <div className="g3">
         <div className="mc"><span className="lbl">Gradini</span><div className="mv">${steps.length}</div></div>
-        <div className="mc"><span className="lbl">Misure tot</span><div className="mv">${steps.reduce((a,s)=>a+s.m.length,0)+rec.length}</div></div>
-        <div className="mc"><span className="lbl">Stato</span><div className="mv" style=${{fontSize:15,color:"var(--green)"}}>OK</div></div>
+        <div className="mc"><span className="lbl">Misure tot</span>
+          <div className="mv">${steps.reduce((a,s)=>a+s.m.length,0)+rec.length}</div></div>
+        <div className="mc"><span className="lbl">Stato</span>
+          <div className="mv" style=${{fontSize:15,color:"var(--green)"}}>OK</div></div>
       </div>
-
       <div className="card">
         <span className="lbl">Grafico semilogaritmico — s / log t</span>
-        <p style=${{fontSize:11,color:"var(--text2)",marginBottom:10}}>X: log(t min) — Y: s lineare invertito</p>
+        <p style=${{fontSize:11,color:"var(--text2)",marginBottom:10}}>X: log(t in min) — Y: s [m] invertito</p>
         <div style=${{position:"relative",width:"100%",height:300}}>
           <canvas ref=${cref} role="img" aria-label="Grafico prove di portata"></canvas>
         </div>
       </div>
-
       <div className="card">
-        <span className="lbl">Riepilogo</span>
-        ${steps.map((s,i)=>html`<div key=${i} style=${{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderTop:i===0?"none":".5px solid var(--border)",fontSize:13}}>
+        <span className="lbl">Riepilogo gradini</span>
+        ${steps.map((s,i)=>html`<div key=${i} style=${{display:"flex",alignItems:"center",gap:8,
+          padding:"6px 0",borderTop:i===0?"none":".5px solid var(--border)",fontSize:13}}>
           <span style=${{width:10,height:10,borderRadius:"50%",background:COLORS[i],flexShrink:0,display:"inline-block"}}></span>
           <span>G${s.n}</span>
           <span style=${{color:"var(--text2)"}}>Q=${s.q} m³/h</span>
           <span style=${{marginLeft:"auto",color:"var(--text2)"}}>${s.m.length} mis.</span>
-          ${s.m.length>0&&html`<span style=${{fontSize:12,color:"var(--text2)"}}>s_max=${Math.max(...s.m.map(p=>p.s)).toFixed(3)}m</span>`}
+          ${s.m.length>0&&html`<span style=${{fontSize:12,color:"var(--text2)"}}>
+            s_max=${Math.max(...s.m.map(p=>p.s)).toFixed(3)} m
+          </span>`}
         </div>`)}
-        ${rec.length>0&&html`<div style=${{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderTop:".5px solid var(--border)",fontSize:13}}>
+        ${rec.length>0&&html`<div style=${{display:"flex",alignItems:"center",gap:8,
+          padding:"6px 0",borderTop:".5px solid var(--border)",fontSize:13}}>
           <span style=${{width:10,height:10,borderRadius:"50%",background:"#E24B4A",flexShrink:0,display:"inline-block"}}></span>
           <span>Risalita</span>
           <span style=${{color:"var(--text2)"}}>Q_n=${recQ} m³/h</span>
           <span style=${{marginLeft:"auto",color:"var(--text2)"}}>${rec.length} mis.</span>
         </div>`}
       </div>
-
       <div className="card">
         <span className="lbl">Metadati pozzo</span>
         <table style=${{fontSize:13}}><tbody>
-          <tr><td style=${{color:"var(--text2)",paddingRight:16,border:"none"}}>Nome</td><td style=${{fontWeight:500,border:"none"}}>${well.name}</td></tr>
-          <tr><td style=${{color:"var(--text2)",border:"none"}}>Livello statico</td><td style=${{border:"none"}}>${well.ls||"—"} m</td></tr>
-          <tr><td style=${{color:"var(--text2)",border:"none"}}>Lat / Lon</td><td style=${{border:"none"}}>${well.lat||"—"} / ${well.lon||"—"}</td></tr>
-          <tr><td style=${{color:"var(--text2)",border:"none"}}>Quota</td><td style=${{border:"none"}}>${well.alt||"—"} m</td></tr>
+          <tr><td style=${{color:"var(--text2)",paddingRight:16,border:"none"}}>Nome</td>
+              <td style=${{fontWeight:500,border:"none"}}>${well.name}</td></tr>
+          <tr><td style=${{color:"var(--text2)",border:"none"}}>Livello statico</td>
+              <td style=${{border:"none"}}>${well.ls||"—"} m</td></tr>
+          <tr><td style=${{color:"var(--text2)",border:"none"}}>Lat / Lon</td>
+              <td style=${{border:"none"}}>${well.lat||"—"} / ${well.lon||"—"}</td></tr>
+          <tr><td style=${{color:"var(--text2)",border:"none"}}>Quota</td>
+              <td style=${{border:"none"}}>${well.alt||"—"} m</td></tr>
         </tbody></table>
       </div>
-
       <div style=${{display:"flex",gap:8}}>
-        <button className="bg" onClick=${exportCSV} style=${{flex:2,padding:12,fontSize:14,fontWeight:500,borderRadius:"var(--r)"}}>Esporta CSV</button>
-        <button onClick=${newSession} style=${{flex:1,padding:12,fontSize:14,borderRadius:"var(--r)",color:"var(--text2)"}}>Nuova prova</button>
+        <button className="bg" onClick=${exportCSV}
+          style=${{flex:2,padding:12,fontSize:14,fontWeight:500,borderRadius:"var(--r)"}}>
+          Esporta CSV
+        </button>
+        <button onClick=${newSession}
+          style=${{flex:1,padding:12,fontSize:14,borderRadius:"var(--r)",color:"var(--text2)"}}>
+          Nuova prova
+        </button>
       </div>
     </div>`}
 
