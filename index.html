@@ -86,6 +86,8 @@ const mmss = s => {
 };
 // Per il grafico log serve un numero > 0 (secondi → minuti decimali)
 const toMinDec = s => Math.max((Number(s)||0)/60, 0.001);
+// CSV: secondi → M.SS  (25s→0.25 | 85s→1.25 | 758s→12.38)
+const toCSVTime = s => { const sec=Math.round(Number(s)||0); return `${Math.floor(sec/60)}.${String(sec%60).padStart(2,"0")}`; };
 
 const DB = {
   K:"pump_v5",
@@ -269,12 +271,12 @@ function App(){
         c += `# Lon,${well.lon||""}\n`;
         c += `# Alt_m,${well.alt||""}\n`;
         c += `# Esportato,${new Date().toISOString()}\n`;
-        c += `\nFASE,GRADINO,Q_m3h,TIMESTAMP,TEMPO_mmss,ABBASSAMENTO_m\n`;
+        c += `\nFASE,GRADINO,Q_m3h,TIMESTAMP,TEMPO_min,ABBASSAMENTO_m\n`;
     steps.forEach(s=>s.m.forEach(p=>{
-      c += `ABBASSAMENTO,${s.n},${s.q},${p.ts},${mmss(p.t)},${Number(p.s).toFixed(3)}\n`;
+      c += `ABBASSAMENTO,${s.n},${s.q},${p.ts},${toCSVTime(p.t)},${Number(p.s).toFixed(3)}\n`;
     }));
     rec.forEach(p=>{
-      c += `RISALITA,,${recQ},${p.ts},${mmss(p.t)},${Number(p.s).toFixed(3)}\n`;
+      c += `RISALITA,,${recQ},${p.ts},${toCSVTime(p.t)},${Number(p.s).toFixed(3)}\n`;
     });
     return c;
   };
@@ -326,12 +328,8 @@ function App(){
           <button onClick=${()=>setCsvModal(null)} style=${{background:"none",border:"none",fontSize:24,padding:0,lineHeight:1}}>×</button>
         </div>
         <textarea readOnly value=${csvModal.text} onClick=${e=>e.target.select()}></textarea>
-        <div style=${{display:"flex",gap:8}}>
-          <button className="bp" onClick=${()=>doShare(csvModal.text,csvModal.fname)}
-            style=${{flex:1,padding:12,fontSize:14}}>⬆ Condividi</button>
-          <button className="bg" onClick=${()=>doCopy(csvModal.text)}
-            style=${{flex:1,padding:12,fontSize:14}}>📋 Copia testo</button>
-        </div>
+        <button className="bp" onClick=${()=>doCopy(csvModal.text)}
+          style=${{width:"100%",padding:13,fontSize:15}}>📋 Copia testo negli appunti</button>
       </div>
     </div>`}
 
