@@ -52,7 +52,9 @@ button:disabled{opacity:.4;cursor:not-allowed}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;font-weight:400;color:var(--text2);padding:3px 0}
 td{padding:5px 0;border-top:.5px solid var(--border)}
-.wb{background:var(--amb);border:.5px solid #fac775;border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--ambt)}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;display:flex;align-items:flex-end}
+.modal{background:var(--bg);border-radius:16px 16px 0 0;padding:1.25rem;width:100%;max-height:80vh;display:flex;flex-direction:column;gap:12px}
+.modal textarea{flex:1;min-height:180px;font-family:"Courier New",monospace;font-size:11px;background:var(--bg2);border:.5px solid var(--border);border-radius:var(--rs);padding:10px;color:var(--text);resize:none}
 </style>
 </head>
 <body>
@@ -88,7 +90,7 @@ function MC({label,value,sub,color}){
 /* ── main app ── */
 function App(){
   const [ph,setPh]=useState(PH.S);
-  const [well,setWell]=useState({name:"",lat:"",lon:"",alt:""});
+  const [well,setWell]=useState({name:"",lat:"",lon:"",alt:"",ls:""});
   const [gL,setGL]=useState(false);
   const [gE,setGE]=useState("");
   const [cfg,setCfg]=useState([{n:1,q:""},{n:2,q:""},{n:3,q:""}]);
@@ -103,6 +105,7 @@ function App(){
   const [toast,setToast]=useState(null);
   const [restored,setRestored]=useState(false);
   const [chartOk,setChartOk]=useState(false);
+  const [csvModal,setCsvModal]=useState(null);
   const tref=useRef(null);
   const cref=useRef(null);
   const cinst=useRef(null);
@@ -193,7 +196,8 @@ function App(){
   const nextStep=()=>{
     const ni=idx+1;
     if(ni>=steps.length){T("Tutti i gradini completati","o");return;}
-    setIdx(ni);setTsec(0);setTrun(false);save({idx:ni,tsec:0});T(`Gradino ${steps[ni].n}`);
+    setIdx(ni);setTrun(false);
+    save({idx:ni});T(`Gradino ${steps[ni].n}`);
   };
 
   const startRec=()=>{
@@ -213,19 +217,31 @@ function App(){
   const finish=()=>{setPh(PH.X);setTrun(false);setChartOk(false);save({ph:PH.X});};
 
   const exportCSV=async()=>{
-    let c=`# PROVE DI PORTATA\n# Pozzo,${well.name}\n# Lat,${well.lat}\n# Lon,${well.lon}\n# Alt_m,${well.alt}\n# Esportato,${new Date().toISOString()}\n\nFASE,GRADINO,Q_m3h,TIMESTAMP,TEMPO_min,ABBASSAMENTO_m\n`;
-    steps.forEach(s=>s.m.forEach(p=>c+=`ABBASSAMENTO,${s.n},${s.q},${p.ts},${p.t},${p.s}\n`));
-    rec.forEach(p=>c+=`RISALITA,,${recQ},${p.ts},${p.t},${p.s}\n`);
+    let c=`# PROVE DI PORTATA\n`;
+    c+=`# Pozzo,${well.name}\n`;
+    c+=`# Livello_statico_m,${well.ls||""}\n`;
+    c+=`# Lat,${well.lat||""}\n`;
+    c+=`# Lon,${well.lon||""}\n`;
+    c+=`# Alt_m,${well.alt||""}\n`;
+    c+=`# Esportato,${new Date().toISOString()}\n`;
+    c+=`\nFASE,GRADINO,Q_m3h,TIMESTAMP,TEMPO_min,ABBASSAMENTO_m\n`;
+    steps.forEach(s=>s.m.forEach(p=>{
+      c+=`ABBASSAMENTO,${s.n},${s.q},${p.ts},${Number(p.t).toFixed(3)},${Number(p.s).toFixed(3)}\n`;
+    }));
+    rec.forEach(p=>{
+      c+=`RISALITA,,${recQ},${p.ts},${Number(p.t).toFixed(3)},${Number(p.s).toFixed(3)}\n`;
+    });
     const fname=`portata_${well.name.replace(/\s+/g,"_")}_${Date.now()}.csv`;
-    const blob=new Blob([c],{type:"text/csv"});
-    const file=new File([blob],fname,{type:"text/csv"});
-    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
-      try{
-        await navigator.share({files:[file],title:`Prova di portata — ${well.name}`,text:`${steps.length} gradini · ${steps.reduce((a,s)=>a+s.m.length,0)+rec.length} misure`});
-      }catch(e){if(e.name!=="AbortError")T("Errore condivisione","e");}
-    } else {
-      const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=fname;a.click();T("CSV scaricato","o");
-    }
+    // 1) prova Web Share API con file
+    try{
+      const file=new File([c],fname,{type:"text/plain"});
+      if(navigator.share&&navigator.canShare({files:[file]})){
+        await navigator.share({files:[file],title:`Portata — ${well.name}`});
+        return;
+      }
+    }catch(e){if(e.name==="AbortError")return;}
+    // 2) fallback: mostra modal con contenuto copiabile + link download
+    setCsvModal({text:c,fname});
   };
 
   const newSession=()=>{
@@ -262,6 +278,10 @@ function App(){
         <input type="text" value=${well.name} onInput=${e=>setWell(w=>({...w,name:e.target.value}))} placeholder="es. Pozzo P1"/>
       <//>
       <${Card}>
+        <${Lbl}>Livello statico falda [m da p.c.]<//>
+        <input type="text" inputMode="decimal" pattern="[0-9.]*" value=${well.ls} onInput=${e=>setWell(w=>({...w,ls:e.target.value}))} placeholder="es. 5.40"/>
+      <//>
+      <${Card}>
         <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <${Lbl}>Coordinate GPS<//>
           <button onClick=${getGPS} disabled=${gL} style=${{fontSize:12,padding:"4px 12px"}}>${gL?"Acquisizione...":"Acquisisci GPS"}</button>
@@ -276,7 +296,27 @@ function App(){
       <//>
       <${Card}>
         <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <div>
+          ${csvModal&&html`<div className="modal-bg" onClick=${e=>{if(e.target.className==="modal-bg")setCsvModal(null)}}>
+      <div className="modal">
+        <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style=${{fontWeight:500,fontSize:14}}>Dati CSV — ${csvModal.fname}</span>
+          <button onClick=${()=>setCsvModal(null)} style=${{background:"none",border:"none",fontSize:22,padding:0,lineHeight:1}}>×</button>
+        </div>
+        <p style=${{fontSize:12,color:"var(--text2)"}}>Copia il testo qui sotto e incollalo in una email, o usa il pulsante Scarica.</p>
+        <textarea readOnly value=${csvModal.text} onClick=${e=>e.target.select()}></textarea>
+        <div style=${{display:"flex",gap:8}}>
+          <button className="bp" onClick=${()=>{
+            navigator.clipboard&&navigator.clipboard.writeText(csvModal.text).then(()=>T("Copiato negli appunti","o"));
+          }} style=${{flex:1,padding:10,fontSize:13,fontWeight:500}}>Copia testo</button>
+          <button className="bg" onClick=${()=>{
+            const a=document.createElement("a");
+            a.href="data:text/plain;charset=utf-8,"+encodeURIComponent(csvModal.text);
+            a.download=csvModal.fname;a.click();T("File scaricato","o");
+          }} style=${{flex:1,padding:10,fontSize:13,fontWeight:500}}>Scarica file</button>
+        </div>
+      </div>
+    </div>`}
+    <div>
             <${Lbl}>Portate gradini<//>
             <p style=${{fontSize:12,color:"var(--text2)",marginTop:2}}>Imposta Q [m³/h] prima di avviare</p>
           </div>
@@ -436,6 +476,7 @@ function App(){
         <${Lbl}>Metadati pozzo<//>
         <table style=${{fontSize:13}}><tbody>
           <tr><td style=${{color:"var(--text2)",paddingRight:16,border:"none"}}>Nome</td><td style=${{fontWeight:500,border:"none"}}>${well.name}</td></tr>
+          <tr><td style=${{color:"var(--text2)",border:"none"}}>Livello statico</td><td style=${{border:"none"}}>${well.ls||"—"} m</td></tr>
           <tr><td style=${{color:"var(--text2)",border:"none"}}>Lat / Lon</td><td style=${{border:"none"}}>${well.lat||"—"} / ${well.lon||"—"}</td></tr>
           <tr><td style=${{color:"var(--text2)",border:"none"}}>Quota</td><td style=${{border:"none"}}>${well.alt||"—"} m</td></tr>
         </tbody></table>
